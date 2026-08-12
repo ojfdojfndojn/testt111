@@ -1,0 +1,185 @@
+name: finint final cross-browser build
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-build.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Build deployable site from current FININT release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site/scripts site/assets site/reports
+          python3 - <<'PY'
+          import os,re,urllib.request,urllib.parse
+          from pathlib import Path
+          base='https://finintcorp.ltd'
+          out=Path('site')
+          ua={'User-Agent':'Mozilla/5.0 (compatible; FININT-build/1.0)'}
+          seeds={
+            '/':'index.html','/ru/':'ru/index.html','/en/':'en/index.html','/it/':'it/index.html',
+            '/robots.txt':'robots.txt','/sitemap.xml':'sitemap.xml',
+            '/scripts/language-router.js':'scripts/language-router.js',
+            '/scripts/mobile-intro.js':'scripts/mobile-intro.js',
+            '/scripts/runtime-en.js':'scripts/runtime-en.js',
+            '/scripts/runtime-ru.js':'scripts/runtime-ru.js',
+            '/scripts/runtime-it.js':'scripts/runtime-it.js',
+            '/scripts/work-orbit.js':'scripts/work-orbit.js',
+            '/reports/public-report-en.pdf':'reports/public-report-en.pdf',
+            '/reports/public-report-ru.pdf':'reports/public-report-ru.pdf',
+            '/reports/public-report-it.pdf':'reports/public-report-it.pdf',
+          }
+          fetched={}
+          def get(urlpath, dest=None, optional=False):
+            clean=urlpath.split('#',1)[0]
+            if clean in fetched:return fetched[clean]
+            url=base+clean
+            try:
+              req=urllib.request.Request(url,headers=ua)
+              with urllib.request.urlopen(req,timeout=30) as r:data=r.read()
+            except Exception as e:
+              if optional:return None
+              raise
+            if dest is None:
+              parsed=urllib.parse.urlsplit(clean)
+              p=parsed.path
+              if p.endswith('/'):p += 'index.html'
+              dest=p.lstrip('/') or 'index.html'
+            fp=out/dest
+            fp.parent.mkdir(parents=True,exist_ok=True)
+            fp.write_bytes(data)
+            fetched[clean]=fp
+            return fp
+          for u,d in seeds.items():
+            get(u,d,optional=u in ('/robots.txt','/sitemap.xml'))
+          # Repeatedly discover local static dependencies from HTML/CSS/JS.
+          pat_attr=re.compile(r'''(?:src|href)=["'](/(?:assets|scripts|reports)/[^"']+)["']''',re.I)
+          pat_url=re.compile(r'''url\(\s*["']?(/(?:assets|scripts|reports)/[^)"']+)''',re.I)
+          for _ in range(4):
+            todo=[]
+            for fp in list(out.rglob('*')):
+              if not fp.is_file() or fp.suffix.lower() not in ('.html','.js','.css','.svg'):continue
+              try:text=fp.read_text('utf-8',errors='ignore')
+              except:continue
+              for m in list(pat_attr.finditer(text))+list(pat_url.finditer(text)):
+                u=m.group(1).replace('&amp;','&')
+                if u not in fetched:todo.append(u)
+            if not todo:break
+            for u in sorted(set(todo)):
+              parsed=urllib.parse.urlsplit(u)
+              dest=parsed.path.lstrip('/')
+              try:get(u,dest,optional=True)
+              except:pass
+          print('downloaded',len(fetched),'resources')
+          PY
+
+          cat > site/scripts/compat.js <<'JS'
+          (function(w,d){
+            var E=w.Element&&w.Element.prototype;
+            if(E&&!E.matches)E.matches=E.msMatchesSelector||E.webkitMatchesSelector;
+            if(E&&!E.closest)E.closest=function(s){var e=this;while(e&&e.nodeType===1){if(e.matches&&e.matches(s))return e;e=e.parentElement||e.parentNode}return null};
+            if(!w.requestAnimationFrame)w.requestAnimationFrame=function(f){return w.setTimeout(function(){f(Date.now())},16)};
+            if(!w.cancelAnimationFrame)w.cancelAnimationFrame=function(i){w.clearTimeout(i)};
+            if(!w.IntersectionObserver){
+              w.IntersectionObserver=function(cb){this._cb=cb;this._els=[]};
+              w.IntersectionObserver.prototype.observe=function(el){this._els.push(el);try{this._cb([{target:el,isIntersecting:true,intersectionRatio:1,boundingClientRect:el.getBoundingClientRect?el.getBoundingClientRect():{}}],this)}catch(e){}};
+              w.IntersectionObserver.prototype.unobserve=function(el){this._els=this._els.filter(function(x){return x!==el})};
+              w.IntersectionObserver.prototype.disconnect=function(){this._els=[]};
+            }
+            var h=d.documentElement;
+            if(h&&h.className.indexOf('fibBooting')<0)h.className+=' fibBooting';
+            function ready(){try{h.className=h.className.replace(/(?:^|\s)fibBooting(?=\s|$)/g,' ').replace(/^\s+|\s+$/g,'');if(h.className.indexOf('fibReady')<0)h.className+=' fibReady'}catch(e){}}
+            if(d.readyState==='loading')d.addEventListener('DOMContentLoaded',ready,false);else ready();
+            w.addEventListener('load',ready,false);
+            w.setTimeout(ready,1800);
+            w.addEventListener('error',function(ev){var t=ev&&ev.target;if(t&&t.tagName==='SCRIPT')ready()},true);
+          })(window,document);
+          JS
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          pages=[Path('site/index.html'),Path('site/ru/index.html'),Path('site/en/index.html'),Path('site/it/index.html')]
+          head_inject='''<script data-cfasync="false" src="/scripts/compat.js"></script><style id="fib-cross-browser-fix">html.fibBooting body{opacity:0!important}html.fibReady body{opacity:1}.fibContactEmail{display:inline-flex;align-items:center;margin-top:13px;margin-bottom:2px;color:#9ca3af;text-decoration:none;font-size:.9rem;line-height:1.35;letter-spacing:.01em;transition:color .2s ease,opacity .2s ease}.fibContactEmail:hover,.fibContactEmail:focus-visible{color:#ffd700}.fibContactEmail:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}@media(max-width:767px){.fibContactEmail{font-size:.86rem;margin-top:11px}}</style>'''
+          email='<a class="fibContactEmail" href="mailto:contact@finintcorp.ltd">contact@finintcorp.ltd</a>'
+          for p in pages:
+            s=p.read_text('utf-8')
+            if '/scripts/compat.js' not in s:
+              s=s.replace('<head>','<head>'+head_inject,1)
+            if 'contact@finintcorp.ltd' not in s:
+              # Contact description uses the obfuscated class DXefkjM in the current release.
+              m=re.search(r'(<p\s+class="DXefkjM"[^>]*>.*?</p>)',s,re.S)
+              if not m:
+                raise SystemExit('contact description not found in '+str(p))
+              s=s[:m.end()]+email+s[m.end():]
+            p.write_text(s,'utf-8')
+          PY
+
+          # Transpile and minify all first-party JS to a broadly compatible syntax.
+          npm init -y >/dev/null 2>&1
+          npm install --no-save esbuild@0.25.9 >/dev/null 2>&1
+          for f in site/scripts/*.js; do
+            ./node_modules/.bin/esbuild "$f" --target=es2015 --minify --legal-comments=none --outfile="$f.tmp" >/dev/null
+            mv "$f.tmp" "$f"
+          done
+
+          # Verify unsupported syntax is gone from first-party runtime files.
+          if grep -RFn --include='*.js' '?.' site/scripts; then echo 'optional chaining remained' >&2; exit 1; fi
+          if grep -RFn --include='*.js' '??' site/scripts; then echo 'nullish coalescing remained' >&2; exit 1; fi
+          grep -RFn 'contact@finintcorp.ltd' site/{index.html,ru/index.html,en/index.html,it/index.html}
+
+          # Basic Cloudflare static headers; avoid CSP changes that could alter the existing UI.
+          cat > site/_headers <<'EOF'
+          /*
+            X-Content-Type-Options: nosniff
+            X-Frame-Options: SAMEORIGIN
+            Referrer-Policy: strict-origin-when-cross-origin
+            Permissions-Policy: camera=(), microphone=(), geolocation=()
+            X-Permitted-Cross-Domain-Policies: none
+          /reports/*
+            Content-Disposition: attachment
+          EOF
+
+          # Make a full deployable archive.
+          (cd site && zip -qr ../finint-cloudflare-v11-74-cross-browser-contact.zip .)
+          unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip | tail -2
+
+      - name: Cross-browser smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0 >/dev/null 2>&1
+          npx playwright install chromium firefox webkit >/dev/null
+          (cd site && python3 -m http.server 4173 >../server.log 2>&1 & echo $! >../server.pid)
+          sleep 1
+          cat > smoke.cjs <<'JS'
+          const {chromium,firefox,webkit}=require('playwright');
+          (async()=>{
+            for (const [name,type] of Object.entries({chromium,firefox,webkit})) {
+              const browser=await type.launch({headless:true});
+              const page=await browser.newPage({viewport:{width:1280,height:900}});
+              const errors=[];
+              page.on('pageerror',e=>errors.push(String(e)));
+              const resp=await page.goto('http://127.0.0.1:4173/en/',{waitUntil:'load'});
+              await page.waitForTimeout(1200);
+              const body=await page.locator('body').innerText();
+              const email=await page.locator('a[href="mailto:contact@finintcorp.ltd"]').count();
+              const opacity=await page.evaluate(()=>getComputedStyle(document.body).opacity);
+              console.log(name,{status:resp&&resp.status(),email,opacity,errors});
+              if(!resp||resp.status()!==200||!body.includes('Financial Intelligence Bureau')||email!==1||opacity==='0'||errors.length) process.exitCode=1;
+              await browser.close();
+            }
+          })().catch(e=>{console.error(e);process.exit(1)});
+          JS
+          node smoke.cjs
+
+      - name: Upload final full site
+        uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-74-cross-browser-contact
+          path: finint-cloudflare-v11-74-cross-browser-contact.zip
+          retention-days: 1
