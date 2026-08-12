@@ -1,4 +1,4 @@
-name: export finint v11.74
+name: export finint v11.74 direct
 on:
   push:
     paths:
@@ -11,14 +11,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify package
+      - name: Prepare direct site archive
+        shell: bash
         run: |
+          set -euo pipefail
           test -s finint-cloudflare-v11-74-cross-browser-contact.zip
           unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip >/dev/null
-          ls -lh finint-cloudflare-v11-74-cross-browser-contact.zip
+          rm -rf export-site
+          mkdir export-site
+          unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d export-site
+          test -s export-site/index.html
+          test -s export-site/ru/index.html
+          test -s export-site/en/index.html
+          test -s export-site/it/index.html
+          test -s export-site/reports/public-report-ru.pdf
+          test -s export-site/reports/public-report-en.pdf
+          test -s export-site/reports/public-report-it.pdf
       - uses: actions/upload-artifact@v4
         with:
-          name: finint-cloudflare-v11-74-cross-browser-contact
-          path: finint-cloudflare-v11-74-cross-browser-contact.zip
+          name: finint-cloudflare-v11-74-direct
+          path: export-site/
           retention-days: 7
-          compression-level: 0
+          compression-level: 6
+          include-hidden-files: true
