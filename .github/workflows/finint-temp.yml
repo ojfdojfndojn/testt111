@@ -1,37 +1,98 @@
-name: inspect finint levels runtime
+name: build finint v11.78 actual levels fix
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect runtime level renderer
+      - name: Patch actual obfuscated level selectors
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-77-levels-width-fix.zip -d dist
+          css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
           node <<'NODE'
           const fs=require('fs');
-          for (const lang of ['ru','en','it']) {
-            const f=`dist/scripts/runtime-${lang}.js`;
-            const s=fs.readFileSync(f,'utf8');
-            console.log(`=== ${lang} runtime bytes ${s.length} ===`);
-            const needles=['p4RfMn83','Индивидуальное исследование','Individual Research','Ricerca individuale','После оценки запроса','After request assessment','Dopo la valutazione','innerHTML','createElement'];
-            for(const n of needles){
-              let i=s.indexOf(n);
-              if(i>=0){
-                console.log(`--- needle ${n} at ${i} ---`);
-                console.log(s.slice(Math.max(0,i-1800), Math.min(s.length,i+3200)));
-              }
-            }
+          const f='dist/assets/r/957bc080ce5bb8bec37b0b.css';
+          let s=fs.readFileSync(f,'utf8');
+          let count=0;
+          function rep(re, replacement, label){
+            if(!re.test(s)) throw new Error('Missing selector/rule: '+label);
+            s=s.replace(re,replacement); count++;
           }
+          rep(/\.G01qhMi\{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start\}/,
+              '.G01qhMi{display:grid;grid-template-columns:clamp(380px,31vw,410px) minmax(0,1fr);gap:18px;align-items:start}',
+              'G01qhMi desktop grid');
+          rep(/\.b7UoLlz\{font-size:\.9rem;font-weight:500;flex:1;overflow-wrap:anywhere\}/,
+              '.b7UoLlz{font-size:.9rem;font-weight:500;flex:1;min-width:0;overflow-wrap:normal;word-break:normal;hyphens:none;white-space:normal}',
+              'b7UoLlz title');
+          rep(/\.rlnL8Qr\{display:flex;flex-direction:column;gap:2px;border:1px solid rgba\(255,255,255,\.08\);border-radius:12px;overflow:hidden;background:rgba\(0,0,0,\.2\);backdrop-filter:blur\(2px\);-webkit-backdrop-filter:blur\(2px\)\}/,
+              '.rlnL8Qr{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,.2);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}',
+              'rlnL8Qr nav');
+          rep(/\.TBv5yiY\{background:rgba\(0,0,0,\.25\);border:1px solid rgba\(255,255,255,\.08\);border-radius:14px;padding:clamp\(20px,2\.5vw,32px\);display:flex;flex-direction:column;gap:24px\}/,
+              '.TBv5yiY{min-width:0;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:clamp(20px,2.5vw,32px);display:flex;flex-direction:column;gap:24px}',
+              'TBv5yiY panel');
+          rep(/\.k7xRvhU\{display:flex;align-items:center;gap:12px;width:100%;padding:16px 18px;background:transparent;border:none;border-bottom:1px solid rgba\(255,255,255,\.05\);text-align:left;cursor:pointer;color:#9ca3af;font-family:inherit;transition:background \.2s,color \.2s,border-color \.2s;min-height:72px\}/,
+              '.k7xRvhU{display:flex;align-items:center;gap:12px;width:100%;min-width:0;padding:16px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.05);text-align:left;cursor:pointer;color:#9ca3af;font-family:inherit;transition:background .2s,color .2s,border-color .2s;min-height:72px}',
+              'k7xRvhU row');
+          if(/\.eL99yem\{/.test(s)){
+            s=s.replace(/\.eL99yem\{([^}]*)\}/,(m,b)=>{
+              b=b.replace(/white-space:[^;]+;?/g,'').replace(/flex:[^;]+;?/g,'');
+              if(b && !b.endsWith(';')) b+=';';
+              return `.eL99yem{${b}white-space:nowrap;flex:0 0 auto}`;
+            }); count++;
+          }
+          // Remove previous ineffective semantic-only patch to avoid confusion.
+          s=s.replace(/\/\* v11\.77 levels desktop proportions \*\/[\s\S]*?@media \(min-width:1025px\)\{[\s\S]*?\}\s*$/m,'');
+          fs.writeFileSync(f,s);
+          console.log('patched actual selectors:',count);
           NODE
-          echo '=== CSS around level-related obfuscated selectors from generated markup candidates ==='
-          grep -RnoE '\.[A-Za-z0-9_-]+\{[^}]{0,400}(grid-template-columns|display:flex|overflow-wrap|word-break)[^}]{0,400}\}' dist/assets/r/*.css | tail -220 || true
+      - name: Verify visual-layout selectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
+          grep -Fq '.G01qhMi{display:grid;grid-template-columns:clamp(380px,31vw,410px) minmax(0,1fr);gap:18px;align-items:start}' "$css"
+          grep -Fq '.b7UoLlz{font-size:.9rem;font-weight:500;flex:1;min-width:0;overflow-wrap:normal;word-break:normal;hyphens:none;white-space:normal}' "$css"
+          grep -Fq '.rlnL8Qr{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%' "$css"
+          grep -Fq '.TBv5yiY{min-width:0;background:' "$css"
+          ! grep -Fq '.G01qhMi{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start}' "$css"
+          ! grep -Fq '.b7UoLlz{font-size:.9rem;font-weight:500;flex:1;overflow-wrap:anywhere}' "$css"
+          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
+            test -s "$f"
+            grep -q 'mailto:contact@finintcorp.ltd' "$f"
+          done
+          test -s dist/reports/public-report-ru.pdf
+          test -s dist/reports/public-report-en.pdf
+          test -s dist/reports/public-report-it.pdf
+          echo 'actual levels selectors verified'
+      - name: Package full Cloudflare site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f finint-cloudflare-v11-78-actual-levels-width-fix.zip
+          (cd dist && zip -qr ../finint-cloudflare-v11-78-actual-levels-width-fix.zip .)
+          unzip -t finint-cloudflare-v11-78-actual-levels-width-fix.zip >/dev/null
+          ls -lh finint-cloudflare-v11-78-actual-levels-width-fix.zip
+      - name: Commit package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'FININT build bot'
+          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
+          git add -f finint-cloudflare-v11-78-actual-levels-width-fix.zip
+          git commit -m 'Build FININT v11.78 actual levels width fix' || true
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-78-actual-levels-width-fix
+          path: finint-cloudflare-v11-78-actual-levels-width-fix.zip
+          if-no-files-found: error
+          retention-days: 7
