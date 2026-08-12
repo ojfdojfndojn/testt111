@@ -1,39 +1,164 @@
-name: finint temporary build
+name: build finint v11.74
+
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch current public site
+      - uses: actions/checkout@v4
+
+      - name: Mirror current FININT site
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p snapshot
-          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/' -o snapshot/root.html
-          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/ru/' -o snapshot/ru.html
-          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/en/' -o snapshot/en.html
-          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/it/' -o snapshot/it.html
-          echo '=== byte sizes ==='
-          wc -c snapshot/*.html
-          echo '=== first 2500 bytes root ==='
-          head -c 2500 snapshot/root.html
-          echo
-          echo '=== compatibility/content tokens per page ==='
-          for f in snapshot/*.html; do
-            echo "--- $f"
-            for t in 'DecompressionStream' 'TextEncoder' 'crypto.subtle' 'AES-GCM' 'IntersectionObserver' '?.' '??' 'contact@finintcorp.ltd' 'public-report-ru.pdf' 'data-report-slot' 'fib-intro-pending'; do
-              printf '%-28s ' "$t"
-              grep -Foc "$t" "$f" || true
-            done
+          rm -rf dist
+          mkdir -p dist/ru dist/en dist/it dist/reports dist/scripts
+          wget -q --mirror --page-requisites --no-parent --no-host-directories --directory-prefix=dist --domains=finintcorp.ltd https://finintcorp.ltd/ || true
+          curl -fsSL --retry 3 https://finintcorp.ltd/ -o dist/index.html
+          curl -fsSL --retry 3 https://finintcorp.ltd/ru/ -o dist/ru/index.html
+          curl -fsSL --retry 3 https://finintcorp.ltd/en/ -o dist/en/index.html
+          curl -fsSL --retry 3 https://finintcorp.ltd/it/ -o dist/it/index.html
+          curl -fsSL --retry 3 https://finintcorp.ltd/scripts/language-router.js -o dist/scripts/language-router.js
+          curl -fsSL --retry 3 https://finintcorp.ltd/scripts/mobile-intro.js -o dist/scripts/mobile-intro.js
+          for p in public-report-ru.pdf public-report-en.pdf public-report-it.pdf; do
+            curl -fsSL --retry 3 "https://finintcorp.ltd/reports/$p" -o "dist/reports/$p" || true
           done
-      - name: Upload snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: finint-public-snapshot
-          path: snapshot
-          retention-days: 1
+          curl -fsSL --retry 2 https://finintcorp.ltd/robots.txt -o dist/robots.txt || true
+          curl -fsSL --retry 2 https://finintcorp.ltd/sitemap.xml -o dist/sitemap.xml || true
+
+      - name: Transpile local scripts for broader browser support
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in dist/scripts/*.js; do
+            [ -f "$f" ] || continue
+            npx -y esbuild@0.25.8 "$f" --target=es2017 --format=iife --minify --outfile="$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+
+      - name: Add contact address, compatibility layer and obfuscate every HTML page
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const ROOT = 'dist';
+          const KEY = Buffer.from('f1n1nt-v1174-crossbrowser-safe-loader-2026','utf8');
+
+          function walk(dir, out) {
+            for (const name of fs.readdirSync(dir)) {
+              const p = path.join(dir,name);
+              const st = fs.statSync(p);
+              if (st.isDirectory()) walk(p,out);
+              else if (/\.html?$/i.test(name)) out.push(p);
+            }
+          }
+
+          function addContact(html) {
+            if (!/contact@finintcorp\.ltd/i.test(html)) {
+              const link = '<a class="fib-contact-email" href="mailto:contact@finintcorp.ltd" aria-label="Email Financial Intelligence Bureau">contact@finintcorp.ltd</a>';
+              html = html.replace(/(<p\b[^>]*class=["'][^"']*contact-desc[^"']*["'][^>]*>[\s\S]*?<\/p>)/i, '$1' + link);
+            }
+            if (!html.includes('.fib-contact-email{')) {
+              const css = '<style>.fib-contact-email{display:inline-flex;margin-top:14px;color:#9ca3af;text-decoration:none;font-size:.92rem;line-height:1.35;letter-spacing:-.01em;transition:color .2s ease,opacity .2s ease}.fib-contact-email:hover,.fib-contact-email:focus-visible{color:#ffd700}.fib-contact-email:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}.fib-compat-fallback .reveal,.fib-compat-fallback [data-reveal]{opacity:1!important;visibility:visible!important;transform:none!important}</style>';
+              html = html.replace(/<\/head>/i, css + '</head>');
+            }
+            return html;
+          }
+
+          function addCompat(html) {
+            const compat = `<script data-cfasync="false">(function(w,d){
+            if(!w.requestAnimationFrame)w.requestAnimationFrame=function(f){return setTimeout(f,16)};
+            if(!w.cancelAnimationFrame)w.cancelAnimationFrame=function(i){clearTimeout(i)};
+            if(!w.requestIdleCallback)w.requestIdleCallback=function(f){return setTimeout(function(){f({didTimeout:false,timeRemaining:function(){return 0}})},1)};
+            if(!w.cancelIdleCallback)w.cancelIdleCallback=function(i){clearTimeout(i)};
+            if(w.NodeList&&!NodeList.prototype.forEach)NodeList.prototype.forEach=Array.prototype.forEach;
+            var ep=w.Element&&Element.prototype;if(ep&&!ep.matches)ep.matches=ep.msMatchesSelector||ep.webkitMatchesSelector;if(ep&&!ep.closest)ep.closest=function(s){var e=this;while(e&&e.nodeType===1){if(e.matches(s))return e;e=e.parentElement||e.parentNode}return null};
+            if(!w.IntersectionObserver)w.IntersectionObserver=function(cb){this._cb=cb;this.observe=function(el){cb([{target:el,isIntersecting:true,intersectionRatio:1}],this)};this.unobserve=function(){};this.disconnect=function(){}};
+            if(!w.ResizeObserver)w.ResizeObserver=function(cb){this.observe=function(el){try{cb([{target:el,contentRect:el.getBoundingClientRect()}],this)}catch(e){}};this.unobserve=function(){};this.disconnect=function(){}};
+            var failed=false;function fallback(){if(failed&&d.documentElement.className.indexOf('fib-compat-fallback')<0)d.documentElement.className+=' fib-compat-fallback';try{d.documentElement.classList.remove('fib-intro-pending','intro-pending');if(d.body)d.body.classList.remove('fib-intro-pending','intro-pending')}catch(e){}}
+            w.addEventListener&&w.addEventListener('error',function(){failed=true;setTimeout(fallback,0)});setTimeout(function(){try{d.documentElement.classList.remove('fib-intro-pending','intro-pending');if(d.body)d.body.classList.remove('fib-intro-pending','intro-pending')}catch(e){}},7000);
+            })(window,document);</script>`;
+            if (!html.includes('fib-compat-fallback')) html = html.replace(/<head([^>]*)>/i, '<head$1>'+compat);
+            return html;
+          }
+
+          function xorEncode(text) {
+            const src = Buffer.from(text,'utf8');
+            const out = Buffer.allocUnsafe(src.length);
+            for (let i=0;i<src.length;i++) out[i]=src[i]^KEY[i%KEY.length];
+            return out.toString('base64');
+          }
+
+          function loaderFor(plain) {
+            const m = plain.match(/<html\b[^>]*\blang=["']([^"']+)["']/i);
+            const lang = m ? m[1] : 'en';
+            const payload = xorEncode(plain);
+            const key = KEY.toString('base64');
+            return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><style>html,body{margin:0;background:#000;color:#9ca3af;font-family:Arial,sans-serif;min-height:100%}#fib-loader-state{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;letter-spacing:.08em;text-transform:lowercase;background:#000}.fib-loader-dot{width:5px;height:5px;border-radius:50%;background:#ffd700;margin-right:9px;animation:fibpulse 1s ease-in-out infinite}@keyframes fibpulse{50%{opacity:.25}}</style></head><body><div id="fib-loader-state"><span class="fib-loader-dot"></span><span>loading</span></div><script>(function(){var p='${payload}',k='${key}',done=false;function b64(s){var x=atob(s),a=[],i;for(i=0;i<x.length;i++)a.push(x.charCodeAt(i)&255);return a}function utf8(a){var s='',i=0,c,c2,c3,c4,cp;while(i<a.length){c=a[i++];if(c<128){s+=String.fromCharCode(c)}else if((c&224)===192){c2=a[i++];s+=String.fromCharCode(((c&31)<<6)|(c2&63))}else if((c&240)===224){c2=a[i++];c3=a[i++];s+=String.fromCharCode(((c&15)<<12)|((c2&63)<<6)|(c3&63))}else{c2=a[i++];c3=a[i++];c4=a[i++];cp=((c&7)<<18)|((c2&63)<<12)|((c3&63)<<6)|(c4&63);cp-=65536;s+=String.fromCharCode(55296+(cp>>10),56320+(cp&1023))}}return s}function run(){try{var a=b64(p),q=b64(k),i;for(i=0;i<a.length;i++)a[i]=a[i]^q[i%q.length];var h=utf8(a);done=true;document.open();document.write(h);document.close()}catch(e){var n=document.getElementById('fib-loader-state');if(n)n.innerHTML='<span>unable to initialize</span>'}}if(typeof atob!=='function'){var n=document.getElementById('fib-loader-state');if(n)n.innerHTML='<span>unsupported browser</span>';return}setTimeout(function(){if(!done){var n=document.getElementById('fib-loader-state');if(n)n.innerHTML='<span>initialization timeout</span>'}},12000);run()})();</script></body></html>`;
+          }
+
+          const htmlFiles=[]; walk(ROOT,htmlFiles);
+          for (const file of htmlFiles) {
+            let html = fs.readFileSync(file,'utf8');
+            html = addContact(html);
+            html = addCompat(html);
+            fs.writeFileSync(file, loaderFor(html));
+          }
+          console.log('Obfuscated HTML files:', htmlFiles.length);
+          NODE
+
+      - name: Add Cloudflare headers and verify build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > dist/_headers <<'EOF'
+          /*
+            X-Content-Type-Options: nosniff
+            X-Frame-Options: DENY
+            Referrer-Policy: strict-origin-when-cross-origin
+            Permissions-Policy: camera=(), microphone=(), geolocation=()
+            X-Permitted-Cross-Domain-Policies: none
+          EOF
+          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
+            test -s "$f"
+            grep -q 'fib-loader-state' "$f"
+            grep -qv 'Financial Intelligence Bureau</h2>' "$f" || { echo "Plaintext footer leaked in $f"; exit 1; }
+            grep -qv 'contact@finintcorp.ltd' "$f" || { echo "Plaintext email leaked in loader $f"; exit 1; }
+            grep -qv 'crypto.subtle' "$f" || exit 1
+            grep -qv 'TextEncoder' "$f" || exit 1
+            grep -qv 'DecompressionStream' "$f" || exit 1
+          done
+          test -s dist/reports/public-report-ru.pdf
+          test -s dist/reports/public-report-en.pdf
+          test -s dist/reports/public-report-it.pdf
+          echo 'Cross-browser loader verification passed.'
+
+      - name: Package complete Cloudflare site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f finint-cloudflare-v11-74-cross-browser-contact.zip
+          (cd dist && zip -qr ../finint-cloudflare-v11-74-cross-browser-contact.zip .)
+          ls -lh finint-cloudflare-v11-74-cross-browser-contact.zip
+          unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip >/dev/null
+
+      - name: Publish build file to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'FININT build bot'
+          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
+          git add -f finint-cloudflare-v11-74-cross-browser-contact.zip
+          git commit -m 'Build FININT v11.74 cross-browser contact' || true
+          git push origin HEAD:main
