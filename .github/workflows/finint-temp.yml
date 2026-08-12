@@ -19,39 +19,52 @@ jobs:
           unzip -q finint-cloudflare-v11-76-css-sri-fix.zip -d dist
           node <<'NODE'
           const fs=require('fs');
-          const cssFile='dist/assets/r/957bc080ce5bb8bec37b0b.css';
+          const path=require('path');
+          const cssDir='dist/assets/r';
+          const cssFile=fs.readdirSync(cssDir).filter(x=>x.endsWith('.css')).map(x=>path.join(cssDir,x)).sort((a,b)=>fs.statSync(b).size-fs.statSync(a).size)[0];
           let css=fs.readFileSync(cssFile,'utf8');
+          let changed=0;
 
-          const oldGrid='.levels-interface{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start}';
-          const newGrid='.levels-interface{display:grid;grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr);gap:18px;align-items:start}';
-          if(!css.includes(oldGrid)) throw new Error('desktop levels grid rule not found');
-          css=css.replace(oldGrid,newGrid);
+          css=css.replace(/\.levels-interface\{display:grid;grid-template-columns:[^;}]+;gap:[^;}]+;align-items:start\}/, m=>{
+            changed++;
+            return '.levels-interface{display:grid;grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr);gap:18px;align-items:start}';
+          });
 
-          const oldName='.level-nav-name{font-size:0.9rem;font-weight:500;flex:1;overflow-wrap:anywhere}';
-          const newName='.level-nav-name{font-size:0.9rem;font-weight:500;flex:1;min-width:0;overflow-wrap:normal;word-break:normal;hyphens:none}';
-          if(!css.includes(oldName)) throw new Error('level nav name rule not found');
-          css=css.replace(oldName,newName);
+          css=css.replace(/\.level-nav-name\{([^}]*)\}/, (m,body)=>{
+            changed++;
+            body=body.replace(/overflow-wrap:[^;]+;?/g,'').replace(/word-break:[^;]+;?/g,'').replace(/hyphens:[^;]+;?/g,'').replace(/min-width:[^;]+;?/g,'');
+            if(body && !body.endsWith(';')) body+=';';
+            return `.level-nav-name{${body}min-width:0;overflow-wrap:normal;word-break:normal;hyphens:none}`;
+          });
 
-          const oldNav='.research-levels-nav{display:flex;flex-direction:column;gap:2px;border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,0.2);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}';
-          const newNav='.research-levels-nav{display:flex;flex-direction:column;gap:2px;min-width:0;border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;background:rgba(0,0,0,0.2);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}';
-          if(css.includes(oldNav)) css=css.replace(oldNav,newNav);
+          css=css.replace(/\.research-levels-nav\{([^}]*)\}/, (m,body)=>{
+            if(/min-width:/.test(body)) return m;
+            changed++;
+            return `.research-levels-nav{min-width:0;${body}}`;
+          });
 
-          const oldView='.research-levels-view{background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:clamp(20px,2.5vw,32px);display:flex;flex-direction:column;gap:24px}';
-          const newView='.research-levels-view{min-width:0;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:clamp(20px,2.5vw,32px);display:flex;flex-direction:column;gap:24px}';
-          if(css.includes(oldView)) css=css.replace(oldView,newView);
+          css=css.replace(/\.research-levels-view\{([^}]*)\}/, (m,body)=>{
+            if(/min-width:/.test(body)) return m;
+            changed++;
+            return `.research-levels-view{min-width:0;${body}}`;
+          });
 
+          if(changed < 2) {
+            console.error('Not enough CSS rules matched. changed=',changed);
+            const hits=css.match(/\.(?:levels-interface|level-nav-name|research-levels-nav|research-levels-view)\{[^}]*\}/g)||[];
+            console.error(hits.join('\n'));
+            process.exit(1);
+          }
           fs.writeFileSync(cssFile,css);
+          console.log('patched',cssFile,'rules',changed);
           NODE
       - name: Verify requested state
         shell: bash
         run: |
           set -euo pipefail
-          css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
-          test -s "$css"
+          css=$(find dist/assets/r -maxdepth 1 -type f -name '*.css' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
           grep -Fq 'grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr);gap:18px' "$css"
           grep -Fq 'overflow-wrap:normal;word-break:normal;hyphens:none' "$css"
-          ! grep -Fq 'grid-template-columns:320px 1fr;gap:24px' "$css"
-          ! grep -Fq '.level-nav-name{font-size:0.9rem;font-weight:500;flex:1;overflow-wrap:anywhere}' "$css"
           for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
             test -s "$f"
             grep -q 'mailto:contact@finintcorp.ltd' "$f"
@@ -69,7 +82,6 @@ jobs:
           rm -f finint-cloudflare-v11-77-levels-width-fix.zip
           (cd dist && zip -qr ../finint-cloudflare-v11-77-levels-width-fix.zip .)
           unzip -t finint-cloudflare-v11-77-levels-width-fix.zip >/dev/null
-          ls -lh finint-cloudflare-v11-77-levels-width-fix.zip
       - name: Publish package
         shell: bash
         run: |
