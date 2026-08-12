@@ -1,0 +1,65 @@
+name: finalize finint v11.74 package
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-finalize.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize package paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s finint-cloudflare-v11-74-cross-browser-contact.zip
+          rm -rf final-site
+          mkdir final-site
+          unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d final-site
+          while IFS= read -r -d '' p; do
+            case "$p" in
+              *'?'*)
+                clean="${p%%\?*}"
+                if [ "$clean" != "$p" ]; then
+                  mkdir -p "$(dirname "$clean")"
+                  if [ -e "$clean" ]; then rm -f "$p"; else mv "$p" "$clean"; fi
+                fi
+                ;;
+            esac
+          done < <(find final-site -depth -print0)
+          if find final-site -print | grep -F '?'; then
+            echo 'Invalid question-mark path remains' >&2
+            exit 1
+          fi
+          test -s final-site/index.html
+          test -s final-site/ru/index.html
+          test -s final-site/en/index.html
+          test -s final-site/it/index.html
+          test -s final-site/reports/public-report-ru.pdf
+          test -s final-site/reports/public-report-en.pdf
+          test -s final-site/reports/public-report-it.pdf
+          grep -q 'fib-loader-state' final-site/index.html
+          grep -qv 'contact@finintcorp.ltd' final-site/index.html
+          rm -f finint-cloudflare-v11-74-cross-browser-contact.zip
+          (cd final-site && zip -qr ../finint-cloudflare-v11-74-cross-browser-contact.zip .)
+          unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip >/dev/null
+      - name: Publish normalized package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'FININT build bot'
+          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
+          git add -f finint-cloudflare-v11-74-cross-browser-contact.zip
+          git commit -m 'Normalize FININT v11.74 package paths' || true
+          git push origin HEAD:main
+      - name: Upload direct Cloudflare site archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-74-final
+          path: final-site/
+          retention-days: 7
+          compression-level: 6
+          include-hidden-files: true
