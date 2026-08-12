@@ -1,4 +1,4 @@
-name: inspect finint stylesheet paths
+name: check finint css sri
 on:
   push:
     paths:
@@ -9,23 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect packaged HTML and assets
+      - name: Check stylesheet integrity
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-75-no-obfuscation-contact.zip -d dist
-          echo '=== CSS FILES ==='
-          find dist -type f \( -name '*.css' -o -name '*.css*' \) -printf '%P\n' | sort | head -200
-          echo '=== ROOT HEAD LINKS ==='
-          node <<'NODE'
-          const fs=require('fs');
-          for(const f of ['dist/index.html','dist/ru/index.html','dist/en/index.html','dist/it/index.html']){
-            const h=fs.readFileSync(f,'utf8');
-            console.log('\n--- '+f+' ---');
-            const head=(h.match(/<head[\s\S]*?<\/head>/i)||[''])[0];
-            for(const m of head.matchAll(/<(?:link|script)\b[^>]*(?:href|src)=["']([^"']+)["'][^>]*>/ig)) console.log(m[0]);
-          }
-          NODE
-          echo '=== TOP-LEVEL FILES ==='
-          find dist -maxdepth 2 -type f -printf '%P\n' | sort | head -300
+          css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
+          echo -n 'actual sha384-'
+          openssl dgst -sha384 -binary "$css" | openssl base64 -A
+          echo
+          echo 'declared:'
+          grep -o 'integrity="sha384-[^"]*"' dist/ru/index.html | head -1
+          echo 'size:'
+          wc -c "$css"
+          echo 'first bytes:'
+          head -c 160 "$css"; echo
