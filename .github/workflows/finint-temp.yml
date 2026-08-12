@@ -1,4 +1,4 @@
-name: publish finint v11.77 artifact
+name: inspect finint v11.77 levels
 on:
   push:
     paths:
@@ -7,17 +7,24 @@ on:
 permissions:
   contents: read
 jobs:
-  publish:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify package exists
+      - name: Inspect actual levels markup and CSS
+        shell: bash
         run: |
-          test -s finint-cloudflare-v11-77-levels-width-fix.zip
-          unzip -t finint-cloudflare-v11-77-levels-width-fix.zip >/dev/null
-      - uses: actions/upload-artifact@v4
-        with:
-          name: finint-cloudflare-v11-77-levels-width-fix
-          path: finint-cloudflare-v11-77-levels-width-fix.zip
-          if-no-files-found: error
-          retention-days: 7
+          set -euo pipefail
+          rm -rf dist && mkdir dist
+          unzip -q finint-cloudflare-v11-77-levels-width-fix.zip -d dist
+          echo '=== files ==='
+          find dist -maxdepth 3 -type f | sort
+          echo '=== html levels snippets ==='
+          grep -RniE 'levels-interface|level-nav|research-level|Уровни аналитических исследований|Индивидуальное исследование|После оценки запроса' dist --include='*.html' --include='*.js' | head -240 || true
+          echo '=== css selector hits ==='
+          grep -RnoE '\.[A-Za-z0-9_-]*(level|research)[A-Za-z0-9_-]*\{[^}]{0,500}\}' dist --include='*.css' | head -300 || true
+          echo '=== relevant all css fragments ==='
+          for f in $(find dist -type f -name '*.css'); do
+            echo "--- $f ---"
+            tr '}' '}\n' < "$f" | grep -Ei 'level|research' | head -240 || true
+          done
