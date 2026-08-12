@@ -1,4 +1,4 @@
-name: fix finint cursor
+name: build finint v11.79 cursor self-contained
 on:
   push:
     paths:
@@ -11,35 +11,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore cursor assets from working build
+      - name: Restore cursor without touching v11.78 layout
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf old new
-          mkdir old new
-          unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d old
-          unzip -q finint-cloudflare-v11-78-actual-levels-width-fix.zip -d new
-          echo 'old cursor-like assets:'
-          find old/assets/r -maxdepth 1 -type f | grep -E '\.(gif|webp)$' || true
-          echo 'new cursor-like assets:'
-          find new/assets/r -maxdepth 1 -type f | grep -E '\.(gif|webp)$' || true
-          for f in 160d2cfb25b35c335e.webp 616b82468c58bbe60d.gif; do
-            if [ -f "old/assets/r/$f" ]; then
-              cp "old/assets/r/$f" "new/assets/r/$f"
-              echo "restored $f"
-            fi
+          rm -rf dist && mkdir dist
+          unzip -q finint-cloudflare-v11-78-actual-levels-width-fix.zip -d dist
+
+          # First try to recover the exact cursor assets from the currently deployed domain/CDN.
+          mkdir -p dist/assets/r
+          curl -fsSL --retry 2 --connect-timeout 10 'https://finintcorp.ltd/assets/r/160d2cfb25b35c335e.webp' -o dist/assets/r/160d2cfb25b35c335e.webp || rm -f dist/assets/r/160d2cfb25b35c335e.webp
+          curl -fsSL --retry 2 --connect-timeout 10 'https://finintcorp.ltd/assets/r/616b82468c58bbe60d.gif' -o dist/assets/r/616b82468c58bbe60d.gif || rm -f dist/assets/r/616b82468c58bbe60d.gif
+
+          # If the historic image is no longer available, make the cursor self-contained and dependency-free.
+          if [ ! -s dist/assets/r/160d2cfb25b35c335e.webp ] && [ ! -s dist/assets/r/616b82468c58bbe60d.gif ]; then
+            echo 'Historic cursor assets unavailable; switching runtime to CSS-rendered cursor.'
+            node <<'NODE'
+            const fs=require('fs');
+            for(const lang of ['ru','en','it']){
+              const f=`dist/scripts/runtime-${lang}.js`;
+              let s=fs.readFileSync(f,'utf8');
+              const start=s.indexOf('(()=>{(()=>{if(!window.matchMedia("(pointer:fine) and (min-width:768px)").matches)return;');
+              const marker='})();(function(){const l=document.getElementById("NpEuVGmR")';
+              const end=s.indexOf(marker);
+              if(start<0 || end<0) throw new Error('cursor runtime block not found: '+lang);
+              const block=`(()=>{(()=>{if(!window.matchMedia("(pointer:fine) and (min-width:768px)").matches)return;const l=document.createElement("span");l.className="fZHOW5c fibCssCursor";l.setAttribute("aria-hidden","true");document.body.appendChild(l);const B="input[type='text'],input[type='email'],input[type='tel'],input[type='search'],input[type='url'],input[type='password'],textarea,[contenteditable='true'],.M6DF1ou:disabled";let b=-100,h=-100,C=null,A=0,E=!1;const P=()=>{A=0;l.style.transform=\`translate3d(\${b-1}px,\${h-1}px,0)\`},D=()=>{A||(A=requestAnimationFrame(P))},K=g=>{if(g!==C){C=g;l.classList.toggle("qU1siwv",g instanceof Element&&!!g.closest(B))}},w=()=>{E||(E=!0,l.classList.add("qUQ83qL"))},x=()=>{E&&(E=!1,l.classList.remove("qUQ83qL"))},d=g=>{if(g.pointerType&&g.pointerType!=="mouse")return;const L=typeof g.getCoalescedEvents==="function"?g.getCoalescedEvents():null,m=L&&L.length?L[L.length-1]:g;b=m.clientX;h=m.clientY;if(!A){l.style.transform=\`translate3d(\${b-1}px,\${h-1}px,0)\`;A=requestAnimationFrame(P)}w()};document.documentElement.classList.add("hoEGGjE");"onpointerrawupdate" in window?document.addEventListener("pointerrawupdate",d,{passive:true}):document.addEventListener("pointermove",d,{passive:true});document.addEventListener("pointerover",g=>K(g.target),{passive:true});document.addEventListener("pointerleave",x,{passive:true});window.addEventListener("blur",x,{passive:true})})();`;
+              s=s.slice(0,start)+block+s.slice(end);
+              fs.writeFileSync(f,s);
+            }
+            const css='dist/assets/r/957bc080ce5bb8bec37b0b.css';
+            let c=fs.readFileSync(css,'utf8');
+            c+='\n/* v11.79 self-contained cursor fallback */\n.fibCssCursor{position:fixed;left:0;top:0;width:20px;height:20px;border:1px solid rgba(255,215,0,.9);border-radius:50%;background:rgba(0,0,0,.12);box-shadow:0 0 0 1px rgba(0,0,0,.25),0 0 14px rgba(255,215,0,.18);pointer-events:none;z-index:2147483647;transform:translate3d(-100px,-100px,0);transition:width .16s ease,height .16s ease,border-color .16s ease,background .16s ease,opacity .16s ease;will-change:transform}.fibCssCursor:after{content:"";position:absolute;width:4px;height:4px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;background:#ffd700}.fibCssCursor.qU1siwv{width:14px;height:14px;background:rgba(255,215,0,.12)}.fibCssCursor:not(.qUQ83qL){opacity:0}.hoEGGjE,.hoEGGjE body,.hoEGGjE a,.hoEGGjE button,.hoEGGjE input,.hoEGGjE textarea,.hoEGGjE select{cursor:none!important}\n';
+            fs.writeFileSync(css,c);
+            NODE
+          else
+            echo 'Recovered original cursor asset from deployed site.'
+          fi
+
+          # Preserve the successful levels fix exactly.
+          grep -Fq '.G01qhMi{display:grid;grid-template-columns:clamp(380px,31vw,410px) minmax(0,1fr);gap:18px;align-items:start}' dist/assets/r/957bc080ce5bb8bec37b0b.css
+          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
+            grep -q 'mailto:contact@finintcorp.ltd' "$f"
           done
-          test -f new/assets/r/160d2cfb25b35c335e.webp || test -f new/assets/r/616b82468c58bbe60d.gif
-          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-ru.js
-          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-en.js
-          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-it.js
-      - name: Package
+
+      - name: Package and verify
         shell: bash
         run: |
           set -euo pipefail
           rm -f finint-cloudflare-v11-79-cursor-restored.zip
-          (cd new && zip -qr ../finint-cloudflare-v11-79-cursor-restored.zip .)
+          (cd dist && zip -qr ../finint-cloudflare-v11-79-cursor-restored.zip .)
           unzip -t finint-cloudflare-v11-79-cursor-restored.zip >/dev/null
+          ls -lh finint-cloudflare-v11-79-cursor-restored.zip
       - name: Commit package
         shell: bash
         run: |
@@ -47,7 +69,7 @@ jobs:
           git config user.name 'FININT build bot'
           git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
           git add -f finint-cloudflare-v11-79-cursor-restored.zip
-          git commit -m 'Restore FININT cursor assets in v11.79' || true
+          git commit -m 'Build FININT v11.79 cursor restored' || true
           git push origin HEAD:main
       - uses: actions/upload-artifact@v4
         with:
