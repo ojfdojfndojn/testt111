@@ -11,61 +11,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Restore plain v11.73 payload from v11.74 package
+      - name: Restore plain site from v11.74 payload
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf dist
-          mkdir dist
+          rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d dist
           node <<'NODE'
-          const fs=require('fs');
-          const path=require('path');
-          const KEY=Buffer.from('f1n1nt-v1174-crossbrowser-safe-loader-2026','utf8');
+          const fs=require('fs'), path=require('path');
           function walk(d,out){for(const n of fs.readdirSync(d)){const p=path.join(d,n),s=fs.statSync(p);if(s.isDirectory())walk(p,out);else if(/\.html?$/i.test(n))out.push(p)}}
-          function decodeLoader(src,file){
-            const pm=src.match(/var p='([^']+)',k='([^']+)',done=false/);
-            if(!pm) throw new Error('v11.74 payload not found: '+file);
-            const enc=Buffer.from(pm[1],'base64');
-            const key=Buffer.from(pm[2],'base64');
-            const out=Buffer.alloc(enc.length);
-            for(let i=0;i<enc.length;i++) out[i]=enc[i]^key[i%key.length];
-            return out.toString('utf8');
+          function decode(src,file){
+            const m=src.match(/var p='([^']+)',k='([^']+)',done=false/);
+            if(!m) throw new Error('encrypted v11.74 wrapper missing: '+file);
+            const a=Buffer.from(m[1],'base64'),k=Buffer.from(m[2],'base64'),o=Buffer.alloc(a.length);
+            for(let i=0;i<a.length;i++)o[i]=a[i]^k[i%k.length];
+            return o.toString('utf8');
           }
-          function cleanCompat(html){
-            // Remove only the compatibility script injected by v11.74.
+          function stripV1174(html){
             html=html.replace(/<script data-cfasync="false">\(function\(w,d\)\{[\s\S]*?fib-compat-fallback[\s\S]*?\}\)\(window,document\);<\/script>/i,'');
-            // Replace the mixed v11.74 style with email-only styling.
-            html=html.replace(/<style>\.fib-contact-email\{[\s\S]*?\.fib-compat-fallback \[data-reveal\]\{opacity:1!important;visibility:visible!important;transform:none!important\}<\/style>/i,
-              '<style id="fib-contact-email-style">.fib-contact-email{display:inline-flex;margin-top:14px;color:#9ca3af;text-decoration:none;font-size:.92rem;line-height:1.35;letter-spacing:-.01em;transition:color .2s ease,opacity .2s ease}.fib-contact-email:hover,.fib-contact-email:focus-visible{color:#ffd700}.fib-contact-email:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}</style>');
+            html=html.replace(/<style>\.fib-contact-email\{[\s\S]*?\.fib-compat-fallback \[data-reveal\]\{opacity:1!important;visibility:visible!important;transform:none!important\}<\/style>/i,'');
+            return html;
+          }
+          const email='contact@finintcorp.ltd';
+          const link='<a class="fib-contact-email" href="mailto:contact@finintcorp.ltd" aria-label="Email Financial Intelligence Bureau">contact@finintcorp.ltd</a>';
+          const style='<style id="fib-contact-email-style">.fib-contact-email{display:inline-flex;margin-top:14px;color:#9ca3af;text-decoration:none;font-size:.92rem;line-height:1.35;letter-spacing:-.01em;transition:color .2s ease,opacity .2s ease}.fib-contact-email:hover,.fib-contact-email:focus-visible{color:#ffd700}.fib-contact-email:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}</style>';
+          function ensureEmail(html,file){
+            // Remove an earlier email copy first, then insert exactly once after the contact description.
+            html=html.replace(/<a\b[^>]*class=["'][^"']*fib-contact-email[^"']*["'][^>]*>[\s\S]*?<\/a>/ig,'');
+            let re=/(<p\b[^>]*data-i18n=["']contactsDescription["'][^>]*>[\s\S]*?<\/p>)/i;
+            if(!re.test(html)) re=/(<p\b[^>]*class=["'][^"']*contact-desc[^"']*["'][^>]*>[\s\S]*?<\/p>)/i;
+            if(!re.test(html)) throw new Error('contactsDescription element missing: '+file);
+            html=html.replace(re,'$1'+link);
+            html=html.replace(/<style id="fib-contact-email-style">[\s\S]*?<\/style>/ig,'');
+            html=html.replace(/<\/head>/i,style+'</head>');
             return html;
           }
           const files=[];walk('dist',files);
-          for(const file of files){
-            const outer=fs.readFileSync(file,'utf8');
-            let html=decodeLoader(outer,file);
-            html=cleanCompat(html);
-            if(!/contact@finintcorp\.ltd/i.test(html)){
-              const link='<a class="fib-contact-email" href="mailto:contact@finintcorp.ltd" aria-label="Email Financial Intelligence Bureau">contact@finintcorp.ltd</a>';
-              const re=/(<p\b[^>]*class=["'][^"']*contact-desc[^"']*["'][^>]*>[\s\S]*?<\/p>)/i;
-              if(!re.test(html)) throw new Error('contact description not found in decoded '+file);
-              html=html.replace(re,'$1'+link);
-              if(!html.includes('fib-contact-email-style')) html=html.replace(/<\/head>/i,'<style id="fib-contact-email-style">.fib-contact-email{display:inline-flex;margin-top:14px;color:#9ca3af;text-decoration:none;font-size:.92rem;line-height:1.35;letter-spacing:-.01em;transition:color .2s ease,opacity .2s ease}.fib-contact-email:hover,.fib-contact-email:focus-visible{color:#ffd700}.fib-contact-email:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}</style></head>');
-            }
-            fs.writeFileSync(file,html);
-          }
-          console.log('Restored plain HTML files:',files.length);
+          for(const file of files){let h=decode(fs.readFileSync(file,'utf8'),file);h=stripV1174(h);h=ensureEmail(h,file);fs.writeFileSync(file,h)}
+          console.log('plain pages restored:',files.length);
           NODE
-
-      - name: Verify requested state
+      - name: Verify exact requested state
         shell: bash
         run: |
           set -euo pipefail
           for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
             test -s "$f"
-            grep -q 'contact@finintcorp.ltd' "$f"
-            grep -q 'contact-desc' "$f"
+            [ "$(grep -o 'contact@finintcorp.ltd' "$f" | wc -l)" -ge 2 ]
+            grep -q 'data-i18n="contactsDescription"' "$f"
             grep -q 'Financial Intelligence Bureau' "$f"
             ! grep -q 'fib-loader-state' "$f"
             ! grep -q 'f1n1nt-v1174-crossbrowser-safe-loader-2026' "$f"
@@ -79,13 +71,8 @@ jobs:
           test -s dist/reports/public-report-ru.pdf
           test -s dist/reports/public-report-en.pdf
           test -s dist/reports/public-report-it.pdf
-          echo 'plain html: yes'
-          echo 'contact email: yes'
-          echo 'v11.74 outer loader: absent'
-          echo 'v11.74 compatibility layer: absent'
-          echo 'site intro assets: present'
-
-      - name: Package full Cloudflare site
+          echo 'verified: plain HTML, email all locales, original page intro present, v11.74 wrapper removed'
+      - name: Package full site
         shell: bash
         run: |
           set -euo pipefail
@@ -93,13 +80,12 @@ jobs:
           (cd dist && zip -qr ../finint-cloudflare-v11-75-no-obfuscation-contact.zip .)
           unzip -t finint-cloudflare-v11-75-no-obfuscation-contact.zip >/dev/null
           ls -lh finint-cloudflare-v11-75-no-obfuscation-contact.zip
-
-      - name: Publish final package
+      - name: Publish package
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'FININT build bot'
           git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
           git add -f finint-cloudflare-v11-75-no-obfuscation-contact.zip
-          git commit -m 'Build FININT v11.75 clean no obfuscation' || true
+          git commit -m 'Build FININT v11.75 clean final' || true
           git push origin HEAD:main
