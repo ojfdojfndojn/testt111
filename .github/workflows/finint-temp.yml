@@ -1,4 +1,4 @@
-name: inspect finint cursor assets
+name: inspect finint cursor assets v2
 on:
   push:
     paths:
@@ -21,8 +21,8 @@ jobs:
             unzip -q "$z" -d "$d"
             echo "=== $z cursor-like assets ==="
             find "$d" -type f \( -iname '*.gif' -o -iname '*.webp' -o -iname '*cursor*' \) -printf '%P %s bytes\n' | sort || true
-            echo "=== runtime cursor refs ==="
-            grep -RnoE '/assets/r/[A-Za-z0-9._-]+\.(gif|webp)|finint-animated-cursor[^"'"' ]*' "$d/scripts" 2>/dev/null | head -80 || true
-            echo "=== cursor CSS ==="
-            grep -RnoE '\.fZHOW5c\{[^}]+\}|\.qU1siwv\{[^}]+\}|\.qUQ83qL\{[^}]+\}|\.hoEGGjE[^\{]*\{[^}]+\}' "$d/assets/r" --include='*.css' | head -100 || true
+            echo "=== runtime refs ==="
+            grep -Rno '160d2cfb25b35c335e.webp\|616b82468c58bbe60d.gif\|finint-animated-cursor' "$d/scripts" 2>/dev/null | head -80 || true
+            echo "=== cursor css classes ==="
+            grep -Rno 'fZHOW5c\|qU1siwv\|qUQ83qL\|hoEGGjE' "$d/assets/r" --include='*.css' | head -100 || true
           done
