@@ -11,60 +11,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Widen levels navigation and prevent broken words
+      - name: Apply levels width override
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-76-css-sri-fix.zip -d dist
-          node <<'NODE'
-          const fs=require('fs');
-          const path=require('path');
-          const cssDir='dist/assets/r';
-          const cssFile=fs.readdirSync(cssDir).filter(x=>x.endsWith('.css')).map(x=>path.join(cssDir,x)).sort((a,b)=>fs.statSync(b).size-fs.statSync(a).size)[0];
-          let css=fs.readFileSync(cssFile,'utf8');
-          let changed=0;
-
-          css=css.replace(/\.levels-interface\{display:grid;grid-template-columns:[^;}]+;gap:[^;}]+;align-items:start\}/, m=>{
-            changed++;
-            return '.levels-interface{display:grid;grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr);gap:18px;align-items:start}';
-          });
-
-          css=css.replace(/\.level-nav-name\{([^}]*)\}/, (m,body)=>{
-            changed++;
-            body=body.replace(/overflow-wrap:[^;]+;?/g,'').replace(/word-break:[^;]+;?/g,'').replace(/hyphens:[^;]+;?/g,'').replace(/min-width:[^;]+;?/g,'');
-            if(body && !body.endsWith(';')) body+=';';
-            return `.level-nav-name{${body}min-width:0;overflow-wrap:normal;word-break:normal;hyphens:none}`;
-          });
-
-          css=css.replace(/\.research-levels-nav\{([^}]*)\}/, (m,body)=>{
-            if(/min-width:/.test(body)) return m;
-            changed++;
-            return `.research-levels-nav{min-width:0;${body}}`;
-          });
-
-          css=css.replace(/\.research-levels-view\{([^}]*)\}/, (m,body)=>{
-            if(/min-width:/.test(body)) return m;
-            changed++;
-            return `.research-levels-view{min-width:0;${body}}`;
-          });
-
-          if(changed < 2) {
-            console.error('Not enough CSS rules matched. changed=',changed);
-            const hits=css.match(/\.(?:levels-interface|level-nav-name|research-levels-nav|research-levels-view)\{[^}]*\}/g)||[];
-            console.error(hits.join('\n'));
-            process.exit(1);
+          cat > /tmp/levels-fix.css <<'CSS'
+          /* v11.77 levels desktop proportions */
+          @media (min-width:1025px){
+            .levels-interface{grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr)!important;gap:18px!important;align-items:start!important}
+            .research-levels-nav{min-width:0!important;width:100%!important}
+            .research-levels-view{min-width:0!important;width:100%!important;max-width:none!important}
+            .level-nav-name{min-width:0!important;overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;white-space:normal!important}
+            .level-nav-price{white-space:nowrap!important;flex:0 0 auto!important}
           }
-          fs.writeFileSync(cssFile,css);
-          console.log('patched',cssFile,'rules',changed);
-          NODE
+          CSS
+          count=0
+          while IFS= read -r -d '' css; do
+            cat /tmp/levels-fix.css >> "$css"
+            count=$((count+1))
+          done < <(find dist -type f -name '*.css' -print0)
+          test "$count" -gt 0
+          echo "patched css files: $count"
       - name: Verify requested state
         shell: bash
         run: |
           set -euo pipefail
-          css=$(find dist/assets/r -maxdepth 1 -type f -name '*.css' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
-          grep -Fq 'grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr);gap:18px' "$css"
-          grep -Fq 'overflow-wrap:normal;word-break:normal;hyphens:none' "$css"
+          grep -R -Fq 'grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr)!important' dist
+          grep -R -Fq 'overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important' dist
           for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
             test -s "$f"
             grep -q 'mailto:contact@finintcorp.ltd' "$f"
@@ -82,6 +57,7 @@ jobs:
           rm -f finint-cloudflare-v11-77-levels-width-fix.zip
           (cd dist && zip -qr ../finint-cloudflare-v11-77-levels-width-fix.zip .)
           unzip -t finint-cloudflare-v11-77-levels-width-fix.zip >/dev/null
+          ls -lh finint-cloudflare-v11-77-levels-width-fix.zip
       - name: Publish package
         shell: bash
         run: |
