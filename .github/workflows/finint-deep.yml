@@ -1,0 +1,31 @@
+name: finint deep inspect
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-deep.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -A 'Mozilla/5.0' https://finintcorp.ltd/ -o root.html
+          echo '=== scripts ==='
+          grep -oE '<script[^>]+src="[^"]+"[^>]*>' root.html || true
+          echo '=== tail ==='
+          tail -c 12000 root.html
+          echo
+          echo '=== external scripts ==='
+          grep -oE 'src="/[^"]+\.js[^"]*"' root.html | sed 's/^src="//;s/"$//' | sort -u > scripts.txt || true
+          cat scripts.txt || true
+          mkdir -p js
+          while read -r u; do [ -n "$u" ] || continue; f="js/$(basename "${u%%\?*}")"; echo "FETCH $u -> $f"; curl -fsSL -A 'Mozilla/5.0' "https://finintcorp.ltd$u" -o "$f"; done < scripts.txt
+          for f in js/*.js; do
+            [ -e "$f" ] || continue
+            echo "=== $f $(wc -c < "$f") bytes ==="
+            head -c 4000 "$f"; echo
+            echo '-- TOKENS --'
+            grep -En 'DecompressionStream|TextEncoder|TextDecoder|crypto\.subtle|IntersectionObserver|ResizeObserver|requestIdleCallback|structuredClone|replaceAll|optional|\?\.|\?\?' "$f" | head -100 || true
+          done
