@@ -1,28 +1,57 @@
-name: inspect finint cursor assets v2
+name: fix finint cursor
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect cursor assets in historical builds
+      - name: Restore cursor assets from working build
         shell: bash
         run: |
           set -euo pipefail
-          for z in finint-cloudflare-v11-74-cross-browser-contact.zip finint-cloudflare-v11-75-no-obfuscation-contact.zip finint-cloudflare-v11-76-css-sri-fix.zip finint-cloudflare-v11-78-actual-levels-width-fix.zip; do
-            d="tmp-${z%.zip}"
-            rm -rf "$d" && mkdir "$d"
-            unzip -q "$z" -d "$d"
-            echo "=== $z cursor-like assets ==="
-            find "$d" -type f \( -iname '*.gif' -o -iname '*.webp' -o -iname '*cursor*' \) -printf '%P %s bytes\n' | sort || true
-            echo "=== runtime refs ==="
-            grep -Rno '160d2cfb25b35c335e.webp\|616b82468c58bbe60d.gif\|finint-animated-cursor' "$d/scripts" 2>/dev/null | head -80 || true
-            echo "=== cursor css classes ==="
-            grep -Rno 'fZHOW5c\|qU1siwv\|qUQ83qL\|hoEGGjE' "$d/assets/r" --include='*.css' | head -100 || true
+          rm -rf old new
+          mkdir old new
+          unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d old
+          unzip -q finint-cloudflare-v11-78-actual-levels-width-fix.zip -d new
+          echo 'old cursor-like assets:'
+          find old/assets/r -maxdepth 1 -type f | grep -E '\.(gif|webp)$' || true
+          echo 'new cursor-like assets:'
+          find new/assets/r -maxdepth 1 -type f | grep -E '\.(gif|webp)$' || true
+          for f in 160d2cfb25b35c335e.webp 616b82468c58bbe60d.gif; do
+            if [ -f "old/assets/r/$f" ]; then
+              cp "old/assets/r/$f" "new/assets/r/$f"
+              echo "restored $f"
+            fi
           done
+          test -f new/assets/r/160d2cfb25b35c335e.webp || test -f new/assets/r/616b82468c58bbe60d.gif
+          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-ru.js
+          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-en.js
+          grep -q '160d2cfb25b35c335e.webp' new/scripts/runtime-it.js
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f finint-cloudflare-v11-79-cursor-restored.zip
+          (cd new && zip -qr ../finint-cloudflare-v11-79-cursor-restored.zip .)
+          unzip -t finint-cloudflare-v11-79-cursor-restored.zip >/dev/null
+      - name: Commit package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'FININT build bot'
+          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
+          git add -f finint-cloudflare-v11-79-cursor-restored.zip
+          git commit -m 'Restore FININT cursor assets in v11.79' || true
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-79-cursor-restored
+          path: finint-cloudflare-v11-79-cursor-restored.zip
+          if-no-files-found: error
+          retention-days: 7
