@@ -1,4 +1,4 @@
-name: build finint v11.79 cursor fixed
+name: build finint v11.80 exact cursor and feature icons
 on:
   push:
     paths:
@@ -11,42 +11,58 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Make cursor self-contained
+      - name: Build v11.80
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-78-actual-levels-width-fix.zip -d dist
+          mkdir -p dist/assets/r
+          curl -fsSL --retry 3 --connect-timeout 10 'https://sdmntprnortheu.oaiusercontent.com/files/00000000-2058-81f4-a9f2-672b7120c783/raw?se=2026-08-12T16%3A48%3A06Z&sp=r&sv=2026-02-06&sr=b&scid=26e8dab1-181f-50ab-851d-e4fd266084bb&skoid=e5f84a89-964a-4fd3-92c2-c2cb3a12ea16&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-12T04%3A53%3A24Z&ske=2026-08-13T04%3A53%3A24Z&sks=b&skv=2026-02-06&sig=r6dRM/HqCDTqwiXX3evvKDwFXwIfNJspnQLWTs7mvHM%3D' -o dist/assets/r/finint-cursor.gif
+          test -s dist/assets/r/finint-cursor.gif
+          file dist/assets/r/finint-cursor.gif | grep -qi 'GIF image data'
+
           node <<'NODE'
           const fs=require('fs');
-          for(const lang of ['ru','en','it']){
+          const langs=['ru','en','it'];
+          const iconSvgs={
+            privacy:`<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffd400" stroke-width="2.2" stroke-linecap="round"><path d="M32 11c-9 0-16 7-16 16 0 7-2 11-5 15"/><path d="M32 16c-6 0-11 5-11 11 0 9-3 15-7 19"/><path d="M32 21c-3 0-6 3-6 6 0 11-4 19-9 24"/><path d="M32 26c0 13-4 23-10 29"/><path d="M38 27c0 12-3 22-8 29"/><path d="M43 24c1 13-2 24-7 31"/><path d="M47 20c3 13 1 25-4 34"/><path d="M12 31c1-12 9-22 20-22 8 0 15 4 19 11"/><path d="M52 26c1 9 0 18-3 25"/></svg>`,
+            assess:`<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffd400" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="30" cy="31" r="3.8"/><circle cx="16" cy="25" r="2.7"/><circle cx="46" cy="19" r="2.7"/><circle cx="38" cy="47" r="2.7"/><circle cx="16" cy="45" r="2.7"/><circle cx="50" cy="39" r="2.7"/><circle cx="28" cy="13" r="2.7"/><path d="M18.6 25.8 26.5 29M33 28.5 43.5 20.7M31.7 34.5 36.5 44.5M27 34 18.3 42.7M33.8 32.7 47.4 38.1M29.5 27.2 28.4 15.7"/></svg>`,
+            results:`<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffd400" stroke-width="2.1"><circle cx="32" cy="32" r="6"/><circle cx="32" cy="32" r="12"/><circle cx="32" cy="32" r="18"/><circle cx="32" cy="32" r="24"/></svg>`,
+            extra:`<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="#ffd400"><circle cx="15" cy="18" r="2.3"/><circle cx="24" cy="13" r="1.8"/><circle cx="33" cy="17" r="2"/><circle cx="44" cy="14" r="2.2"/><circle cx="50" cy="24" r="1.9"/><circle cx="40" cy="25" r="2.5"/><circle cx="28" cy="25" r="2.2"/><circle cx="18" cy="30" r="1.8"/><circle cx="31" cy="35" r="2.6"/><circle cx="46" cy="35" r="2"/><circle cx="52" cy="44" r="2.3"/><circle cx="39" cy="45" r="1.9"/><circle cx="27" cy="46" r="2.2"/><circle cx="16" cy="42" r="2.1"/><circle cx="23" cy="54" r="1.8"/><circle cx="35" cy="55" r="2.2"/><circle cx="46" cy="53" r="1.8"/></svg>`
+          };
+          const enc=s=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(s);
+          const labels={
+            ru:[['Конфиденциальность','privacy'],['Предварительная оценка','assess'],['Структурированный результат','results']],
+            en:[['Confidentiality','privacy'],['Preliminary assessment','assess'],['Structured result','results'],['Structured results','results']],
+            it:[['Riservatezza','privacy'],['Valutazione preliminare','assess'],['Risultati strutturati','results']]
+          };
+          for(const lang of langs){
             const f=`dist/scripts/runtime-${lang}.js`;
             let s=fs.readFileSync(f,'utf8');
-            const start=s.indexOf('(()=>{if(!window.matchMedia("(pointer:fine) and (min-width:768px)").matches)return;');
-            const marker='(function(){const l=document.getElementById("NpEuVGmR")';
-            const end=s.indexOf(marker,start);
-            if(start<0 || end<0) throw new Error('cursor block not found: '+lang);
-            const replacement=`(()=>{if(!window.matchMedia("(pointer:fine) and (min-width:768px)").matches)return;const l=document.createElement("span");l.className="fZHOW5c fibCssCursor";l.setAttribute("aria-hidden","true");document.body.appendChild(l);const B="input,textarea,select,[contenteditable='true'],.M6DF1ou:disabled";let b=-100,h=-100,C=null,A=0,E=false;const P=()=>{A=0;l.style.transform=\`translate3d(\${b-10}px,\${h-10}px,0)\`},K=g=>{if(g!==C){C=g;l.classList.toggle("qU1siwv",g instanceof Element&&!!g.closest(B))}},w=()=>{if(!E){E=true;l.classList.add("qUQ83qL")}},x=()=>{if(E){E=false;l.classList.remove("qUQ83qL")}},d=g=>{if(g.pointerType&&g.pointerType!=="mouse")return;const L=typeof g.getCoalescedEvents==="function"?g.getCoalescedEvents():null,m=L&&L.length?L[L.length-1]:g;b=m.clientX;h=m.clientY;if(!A){l.style.transform=\`translate3d(\${b-10}px,\${h-10}px,0)\`;A=requestAnimationFrame(P)}w()};document.documentElement.classList.add("hoEGGjE");"onpointerrawupdate" in window?document.addEventListener("pointerrawupdate",d,{passive:true}):document.addEventListener("pointermove",d,{passive:true});document.addEventListener("pointerover",g=>K(g.target),{passive:true});document.addEventListener("pointerleave",x,{passive:true});window.addEventListener("blur",x,{passive:true})})();`;
-            s=s.slice(0,start)+replacement+s.slice(end);
+            s=s.replaceAll('/assets/r/160d2cfb25b35c335e.webp','/assets/r/finint-cursor.gif').replaceAll('/assets/r/616b82468c58bbe60d.gif','/assets/r/finint-cursor.gif');
+            const injection=`;(()=>{const ICONS=${JSON.stringify(Object.fromEntries(Object.entries(iconSvgs).map(([k,v])=>[k,enc(v)])))};const MAP=${JSON.stringify(labels[lang])};function apply(){const all=[...document.querySelectorAll('body *')];for(const [txt,key] of MAP){const title=all.find(el=>el.children.length===0&&el.textContent&&el.textContent.trim()===txt);if(!title)continue;let box=title;for(let i=0;i<5&&box;i++,box=box.parentElement){const svg=box.querySelector&&box.querySelector('svg');const img=box.querySelector&&box.querySelector('img');const target=svg||img;if(target){const wrap=document.createElement('span');wrap.className='fibFeatureIcon';wrap.style.backgroundImage='url("'+ICONS[key]+'")';target.replaceWith(wrap);break}}}}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});else apply();new MutationObserver(()=>apply()).observe(document.documentElement,{childList:true,subtree:true})})();`;
+            s+=injection;
             fs.writeFileSync(f,s);
           }
-          const cssFile='dist/assets/r/957bc080ce5bb8bec37b0b.css';
-          let css=fs.readFileSync(cssFile,'utf8');
-          css+='\n/* v11.79 self-contained cursor */\n.fZHOW5c.fibCssCursor{position:fixed!important;left:0!important;top:0!important;display:block!important;width:20px!important;height:20px!important;max-width:none!important;max-height:none!important;border:1px solid rgba(255,215,0,.92)!important;border-radius:50%!important;background:rgba(4,4,4,.34)!important;box-shadow:0 0 0 1px rgba(0,0,0,.42),0 0 14px rgba(255,215,0,.18)!important;pointer-events:none!important;z-index:2147483647!important;opacity:0!important;transform:translate3d(-100px,-100px,0);transition:width .15s ease,height .15s ease,background .15s ease,opacity .12s ease!important;will-change:transform!important}.fZHOW5c.fibCssCursor.qUQ83qL{opacity:1!important}.fZHOW5c.fibCssCursor:after{content:"";position:absolute;width:4px;height:4px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;background:#ffd700}.fZHOW5c.fibCssCursor.qU1siwv{width:14px!important;height:14px!important;background:rgba(255,215,0,.12)!important}@media (pointer:coarse),(max-width:767px){.fZHOW5c.fibCssCursor{display:none!important}}\n';
-          fs.writeFileSync(cssFile,css);
+          const css='dist/assets/r/957bc080ce5bb8bec37b0b.css';
+          let c=fs.readFileSync(css,'utf8');
+          c+='\n/* v11.80 feature icons */\n.fibFeatureIcon{display:inline-block;width:54px;height:54px;flex:0 0 54px;background-repeat:no-repeat;background-position:center;background-size:contain;filter:drop-shadow(0 0 10px rgba(255,212,0,.08))}@media(max-width:767px){.fibFeatureIcon{width:46px;height:46px;flex-basis:46px}}\n';
+          fs.writeFileSync(css,c);
           NODE
-      - name: Verify cursor and preserved layout
+
+      - name: Verify v11.80
         shell: bash
         run: |
           set -euo pipefail
           css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
-          grep -Fq '.fZHOW5c.fibCssCursor{' "$css"
           grep -Fq '.G01qhMi{display:grid;grid-template-columns:clamp(380px,31vw,410px) minmax(0,1fr);gap:18px;align-items:start}' "$css"
+          grep -Fq '.fibFeatureIcon{' "$css"
+          test -s dist/assets/r/finint-cursor.gif
           for lang in ru en it; do
             f="dist/scripts/runtime-$lang.js"
-            grep -Fq 'fibCssCursor' "$f"
-            ! grep -Fq '160d2cfb25b35c335e.webp' "$f"
-            ! grep -Fq '616b82468c58bbe60d.gif' "$f"
+            grep -Fq '/assets/r/finint-cursor.gif' "$f"
+            grep -Fq 'fibFeatureIcon' "$f"
           done
           for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
             grep -q 'mailto:contact@finintcorp.ltd' "$f"
@@ -54,26 +70,28 @@ jobs:
           test -s dist/reports/public-report-ru.pdf
           test -s dist/reports/public-report-en.pdf
           test -s dist/reports/public-report-it.pdf
-          echo 'cursor and v11.78 layout verified'
-      - name: Package full site
+          echo 'v11.80 verified'
+
+      - name: Package
         shell: bash
         run: |
           set -euo pipefail
-          rm -f finint-cloudflare-v11-79-cursor-fixed.zip
-          (cd dist && zip -qr ../finint-cloudflare-v11-79-cursor-fixed.zip .)
-          unzip -t finint-cloudflare-v11-79-cursor-fixed.zip >/dev/null
-      - name: Commit package
+          rm -f finint-cloudflare-v11-80-exact-cursor-feature-icons.zip
+          (cd dist && zip -qr ../finint-cloudflare-v11-80-exact-cursor-feature-icons.zip .)
+          unzip -t finint-cloudflare-v11-80-exact-cursor-feature-icons.zip >/dev/null
+
+      - name: Publish
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'FININT build bot'
           git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
-          git add -f finint-cloudflare-v11-79-cursor-fixed.zip
-          git commit -m 'Build FININT v11.79 cursor fixed' || true
+          git add -f finint-cloudflare-v11-80-exact-cursor-feature-icons.zip
+          git commit -m 'Build FININT v11.80 exact cursor and feature icons' || true
           git push origin HEAD:main
       - uses: actions/upload-artifact@v4
         with:
-          name: finint-cloudflare-v11-79-cursor-fixed
-          path: finint-cloudflare-v11-79-cursor-fixed.zip
+          name: finint-cloudflare-v11-80-exact-cursor-feature-icons
+          path: finint-cloudflare-v11-80-exact-cursor-feature-icons.zip
           if-no-files-found: error
           retention-days: 7
