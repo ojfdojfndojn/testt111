@@ -1,93 +1,31 @@
-name: build finint v11.75 clean
+name: inspect finint stylesheet paths
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
-permissions:
-  contents: write
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Remove v11.74 wrapper and add email without touching intro
+      - name: Inspect packaged HTML and assets
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
-          unzip -q finint-cloudflare-v11-74-cross-browser-contact.zip -d dist
+          unzip -q finint-cloudflare-v11-75-no-obfuscation-contact.zip -d dist
+          echo '=== CSS FILES ==='
+          find dist -type f \( -name '*.css' -o -name '*.css*' \) -printf '%P\n' | sort | head -200
+          echo '=== ROOT HEAD LINKS ==='
           node <<'NODE'
-          const fs=require('fs'),path=require('path');
-          function walk(d,out){for(const n of fs.readdirSync(d)){const p=path.join(d,n),s=fs.statSync(p);if(s.isDirectory())walk(p,out);else if(/\.html?$/i.test(n))out.push(p)}}
-          function unwrap(src,file){
-            let h=src,layers=0;
-            for(;;){const m=h.match(/var p='([^']+)',k='([^']+)',done=false/);if(!m)break;const a=Buffer.from(m[1],'base64'),k=Buffer.from(m[2],'base64'),o=Buffer.alloc(a.length);for(let i=0;i<a.length;i++)o[i]=a[i]^k[i%k.length];h=o.toString('utf8');layers++;if(layers>10)throw new Error('too many wrappers '+file)}
-            console.log(file+': wrappers removed='+layers);
-            return h;
+          const fs=require('fs');
+          for(const f of ['dist/index.html','dist/ru/index.html','dist/en/index.html','dist/it/index.html']){
+            const h=fs.readFileSync(f,'utf8');
+            console.log('\n--- '+f+' ---');
+            const head=(h.match(/<head[\s\S]*?<\/head>/i)||[''])[0];
+            for(const m of head.matchAll(/<(?:link|script)\b[^>]*(?:href|src)=["']([^"']+)["'][^>]*>/ig)) console.log(m[0]);
           }
-          function clean(h){
-            h=h.replace(/<script data-cfasync="false">\(function\(w,d\)\{[\s\S]*?fib-compat-fallback[\s\S]*?\}\)\(window,document\);<\/script>/ig,'');
-            h=h.replace(/<style>\.fib-contact-email\{[\s\S]*?\.fib-compat-fallback \[data-reveal\]\{opacity:1!important;visibility:visible!important;transform:none!important\}<\/style>/ig,'');
-            h=h.replace(/<a\b[^>]*class=["'][^"']*fib-contact-email[^"']*["'][^>]*>[\s\S]*?<\/a>/ig,'');
-            h=h.replace(/<style id="fib-contact-email-style">[\s\S]*?<\/style>/ig,'');
-            return h;
-          }
-          const link='<a class="fib-contact-email" href="mailto:contact@finintcorp.ltd" aria-label="Email Financial Intelligence Bureau">contact@finintcorp.ltd</a>';
-          const style='<style id="fib-contact-email-style">.fib-contact-email{display:inline-flex;margin-top:14px;color:#9ca3af;text-decoration:none;font-size:.92rem;line-height:1.35;letter-spacing:-.01em;transition:color .2s ease,opacity .2s ease}.fib-contact-email:hover,.fib-contact-email:focus-visible{color:#ffd700}.fib-contact-email:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}</style>';
-          function insert(h,file){
-            const re=/<h([1-6])\b[^>]*>\s*Financial Intelligence Bureau\s*<\/h\1>/ig;
-            const matches=[...h.matchAll(re)];
-            if(!matches.length)throw new Error('Financial Intelligence Bureau heading missing: '+file);
-            const m=matches[matches.length-1];
-            const start=m.index+m[0].length;
-            const tail=h.slice(start);
-            const pm=tail.match(/<p\b[^>]*>[\s\S]*?<\/p>/i);
-            if(!pm)throw new Error('description paragraph after FIB heading missing: '+file);
-            const pos=start+pm.index+pm[0].length;
-            h=h.slice(0,pos)+link+h.slice(pos);
-            h=h.replace(/<\/head>/i,style+'</head>');
-            return h;
-          }
-          const files=[];walk('dist',files);
-          for(const f of files){let h=unwrap(fs.readFileSync(f,'utf8'),f);h=clean(h);h=insert(h,f);fs.writeFileSync(f,h)}
           NODE
-      - name: Verify requested result
-        shell: bash
-        run: |
-          set -euo pipefail
-          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
-            test -s "$f"
-            grep -q 'mailto:contact@finintcorp.ltd' "$f"
-            grep -q 'contact@finintcorp.ltd</a>' "$f"
-            grep -Eq '<h[1-6][^>]*>Financial Intelligence Bureau</h[1-6]>' "$f"
-            ! grep -q 'fib-loader-state' "$f"
-            ! grep -q 'f1n1nt-v1174-crossbrowser-safe-loader-2026' "$f"
-            ! grep -q 'fib-compat-fallback' "$f"
-            ! grep -q 'unable to initialize' "$f"
-            ! grep -q 'initialization timeout' "$f"
-            ! grep -q "var p='" "$f"
-          done
-          test -s dist/scripts/mobile-intro.js
-          test -s dist/scripts/language-router.js
-          test -s dist/reports/public-report-ru.pdf
-          test -s dist/reports/public-report-en.pdf
-          test -s dist/reports/public-report-it.pdf
-          echo 'verification passed: no wrapper/obfuscation; email present; original intro files retained'
-      - name: Package full Cloudflare site
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f finint-cloudflare-v11-75-no-obfuscation-contact.zip
-          (cd dist && zip -qr ../finint-cloudflare-v11-75-no-obfuscation-contact.zip .)
-          unzip -t finint-cloudflare-v11-75-no-obfuscation-contact.zip >/dev/null
-          ls -lh finint-cloudflare-v11-75-no-obfuscation-contact.zip
-      - name: Publish final package
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'FININT build bot'
-          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
-          git add -f finint-cloudflare-v11-75-no-obfuscation-contact.zip
-          git commit -m 'Build FININT v11.75 clean final' || true
-          git push origin HEAD:main
+          echo '=== TOP-LEVEL FILES ==='
+          find dist -maxdepth 2 -type f -printf '%P\n' | sort | head -300
