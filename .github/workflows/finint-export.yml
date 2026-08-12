@@ -1,0 +1,24 @@
+name: export finint v11.74
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify package
+        run: |
+          test -s finint-cloudflare-v11-74-cross-browser-contact.zip
+          unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip >/dev/null
+          ls -lh finint-cloudflare-v11-74-cross-browser-contact.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-74-cross-browser-contact
+          path: finint-cloudflare-v11-74-cross-browser-contact.zip
+          retention-days: 7
+          compression-level: 0
