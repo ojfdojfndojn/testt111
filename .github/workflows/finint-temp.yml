@@ -1,4 +1,4 @@
-name: inspect finint v11.77 levels
+name: inspect finint levels runtime
 on:
   push:
     paths:
@@ -11,20 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect actual levels markup and CSS
+      - name: Inspect runtime level renderer
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-77-levels-width-fix.zip -d dist
-          echo '=== files ==='
-          find dist -maxdepth 3 -type f | sort
-          echo '=== html levels snippets ==='
-          grep -RniE 'levels-interface|level-nav|research-level|Уровни аналитических исследований|Индивидуальное исследование|После оценки запроса' dist --include='*.html' --include='*.js' | head -240 || true
-          echo '=== css selector hits ==='
-          grep -RnoE '\.[A-Za-z0-9_-]*(level|research)[A-Za-z0-9_-]*\{[^}]{0,500}\}' dist --include='*.css' | head -300 || true
-          echo '=== relevant all css fragments ==='
-          for f in $(find dist -type f -name '*.css'); do
-            echo "--- $f ---"
-            tr '}' '}\n' < "$f" | grep -Ei 'level|research' | head -240 || true
-          done
+          node <<'NODE'
+          const fs=require('fs');
+          for (const lang of ['ru','en','it']) {
+            const f=`dist/scripts/runtime-${lang}.js`;
+            const s=fs.readFileSync(f,'utf8');
+            console.log(`=== ${lang} runtime bytes ${s.length} ===`);
+            const needles=['p4RfMn83','Индивидуальное исследование','Individual Research','Ricerca individuale','После оценки запроса','After request assessment','Dopo la valutazione','innerHTML','createElement'];
+            for(const n of needles){
+              let i=s.indexOf(n);
+              if(i>=0){
+                console.log(`--- needle ${n} at ${i} ---`);
+                console.log(s.slice(Math.max(0,i-1800), Math.min(s.length,i+3200)));
+              }
+            }
+          }
+          NODE
+          echo '=== CSS around level-related obfuscated selectors from generated markup candidates ==='
+          grep -RnoE '\.[A-Za-z0-9_-]+\{[^}]{0,400}(grid-template-columns|display:flex|overflow-wrap|word-break)[^}]{0,400}\}' dist/assets/r/*.css | tail -220 || true
