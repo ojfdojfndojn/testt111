@@ -1,0 +1,101 @@
+name: finint final build v2
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-build2.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site/scripts site/reports
+          python3 - <<'PY'
+          import re,urllib.request,urllib.parse
+          from pathlib import Path
+          base='https://finintcorp.ltd'; out=Path('site'); fetched={}; headers={'User-Agent':'Mozilla/5.0 FININT-build'}
+          seeds={'/':'index.html','/ru/':'ru/index.html','/en/':'en/index.html','/it/':'it/index.html','/scripts/language-router.js':'scripts/language-router.js','/scripts/mobile-intro.js':'scripts/mobile-intro.js','/scripts/runtime-en.js':'scripts/runtime-en.js','/scripts/runtime-ru.js':'scripts/runtime-ru.js','/scripts/runtime-it.js':'scripts/runtime-it.js','/scripts/work-orbit.js':'scripts/work-orbit.js','/reports/public-report-en.pdf':'reports/public-report-en.pdf','/reports/public-report-ru.pdf':'reports/public-report-ru.pdf','/reports/public-report-it.pdf':'reports/public-report-it.pdf'}
+          def fetch(u,d=None,optional=False):
+            k=u.split('#',1)[0]
+            if k in fetched:return fetched[k]
+            try:
+              req=urllib.request.Request(base+k,headers=headers)
+              with urllib.request.urlopen(req,timeout=30) as r:b=r.read()
+            except Exception:
+              if optional:return None
+              raise
+            if d is None:
+              p=urllib.parse.urlsplit(k).path; d=(p+'index.html' if p.endswith('/') else p).lstrip('/') or 'index.html'
+            f=out/d; f.parent.mkdir(parents=True,exist_ok=True); f.write_bytes(b); fetched[k]=f; return f
+          for u,d in seeds.items():fetch(u,d)
+          for u,d in {'/robots.txt':'robots.txt','/sitemap.xml':'sitemap.xml'}.items():fetch(u,d,True)
+          pa=re.compile(r'''(?:src|href)=["'](/(?:assets|scripts|reports)/[^"']+)["']''',re.I); pu=re.compile(r'''url\(\s*["']?(/(?:assets|scripts|reports)/[^)"']+)''',re.I)
+          for _ in range(5):
+            todo=[]
+            for f in list(out.rglob('*')):
+              if not f.is_file() or f.suffix.lower() not in ('.html','.js','.css','.svg'):continue
+              t=f.read_text('utf-8',errors='ignore')
+              for m in list(pa.finditer(t))+list(pu.finditer(t)):
+                u=m.group(1).replace('&amp;','&')
+                if u not in fetched:todo.append(u)
+            if not todo:break
+            for u in sorted(set(todo)):
+              p=urllib.parse.urlsplit(u).path.lstrip('/'); fetch(u,p,True)
+          print('resources',len(fetched))
+          PY
+          cat > site/scripts/compat.js <<'JS'
+          (function(w,d){var p=w.Element&&w.Element.prototype;if(p&&!p.matches)p.matches=p.msMatchesSelector||p.webkitMatchesSelector;if(p&&!p.closest)p.closest=function(s){var e=this;while(e&&e.nodeType===1){if(e.matches&&e.matches(s))return e;e=e.parentElement||e.parentNode}return null};if(!w.requestAnimationFrame)w.requestAnimationFrame=function(f){return setTimeout(function(){f(Date.now())},16)};if(!w.cancelAnimationFrame)w.cancelAnimationFrame=function(i){clearTimeout(i)};if(!w.IntersectionObserver){w.IntersectionObserver=function(c){this.c=c;this.e=[]};w.IntersectionObserver.prototype.observe=function(e){this.e.push(e);try{this.c([{target:e,isIntersecting:true,intersectionRatio:1,boundingClientRect:e.getBoundingClientRect?e.getBoundingClientRect():{}}],this)}catch(x){}};w.IntersectionObserver.prototype.unobserve=function(e){this.e=this.e.filter(function(x){return x!==e})};w.IntersectionObserver.prototype.disconnect=function(){this.e=[]}}var h=d.documentElement;if(h&&h.className.indexOf('fibBooting')<0)h.className+=' fibBooting';function r(){try{h.className=h.className.replace(/(?:^|\s)fibBooting(?=\s|$)/g,' ').replace(/^\s+|\s+$/g,'');if(h.className.indexOf('fibReady')<0)h.className+=' fibReady'}catch(e){}}if(d.readyState==='loading')d.addEventListener('DOMContentLoaded',r,false);else r();w.addEventListener('load',r,false);w.setTimeout(r,1800);w.addEventListener('error',function(e){var t=e&&e.target;if(t&&t.tagName==='SCRIPT')r()},true)})(window,document);
+          JS
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          pages=[Path('site/index.html'),Path('site/ru/index.html'),Path('site/en/index.html'),Path('site/it/index.html')]
+          inj='<script data-cfasync="false" src="/scripts/compat.js"></script><style id="fib-cross-browser-fix">html.fibBooting body{opacity:0!important}html.fibReady body{opacity:1}.fibContactEmail{display:inline-flex;align-items:center;margin-top:13px;margin-bottom:2px;color:#9ca3af;text-decoration:none;font-size:.9rem;line-height:1.35;letter-spacing:.01em;transition:color .2s ease,opacity .2s ease}.fibContactEmail:hover,.fibContactEmail:focus-visible{color:#ffd700}.fibContactEmail:focus-visible{outline:1px solid rgba(255,215,0,.65);outline-offset:4px}@media(max-width:767px){.fibContactEmail{font-size:.86rem;margin-top:11px}}</style>'
+          mail='<a class="fibContactEmail" href="mailto:contact@finintcorp.ltd">contact@finintcorp.ltd</a>'
+          for p in pages:
+            s=p.read_text('utf-8'); s=s.replace('<head>','<head>'+inj,1) if '/scripts/compat.js' not in s else s
+            if 'contact@finintcorp.ltd' not in s:
+              m=re.search(r'(<p\s+class="DXefkjM"[^>]*>.*?</p>)',s,re.S)
+              if not m:raise SystemExit('contact block missing: '+str(p))
+              s=s[:m.end()]+mail+s[m.end():]
+            p.write_text(s,'utf-8')
+          PY
+          npm init -y >/dev/null 2>&1
+          npm install --no-save esbuild@0.25.9 >/dev/null 2>&1
+          for f in site/scripts/*.js; do ./node_modules/.bin/esbuild "$f" --target=es2015 --minify --legal-comments=none --outfile="$f.new" >/dev/null; mv "$f.new" "$f"; done
+          grep -RFn 'contact@finintcorp.ltd' site/index.html site/ru/index.html site/en/index.html site/it/index.html
+          cat > site/_headers <<'EOF'
+          /*
+            X-Content-Type-Options: nosniff
+            X-Frame-Options: SAMEORIGIN
+            Referrer-Policy: strict-origin-when-cross-origin
+            Permissions-Policy: camera=(), microphone=(), geolocation=()
+            X-Permitted-Cross-Domain-Policies: none
+          /reports/*
+            Content-Disposition: attachment
+          EOF
+          (cd site && zip -qr ../finint-cloudflare-v11-74-cross-browser-contact.zip .)
+          unzip -t finint-cloudflare-v11-74-cross-browser-contact.zip | tail -2
+      - name: Browser test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0 >/dev/null 2>&1
+          npx playwright install chromium firefox webkit >/dev/null
+          (cd site && python3 -m http.server 4173 >../server.log 2>&1 &)
+          sleep 1
+          cat > smoke.cjs <<'JS'
+          const {chromium,firefox,webkit}=require('playwright');
+          (async()=>{for(const [n,t] of Object.entries({chromium,firefox,webkit})){const b=await t.launch({headless:true});const p=await b.newPage({viewport:{width:1280,height:900}});const er=[];p.on('pageerror',e=>er.push(String(e)));const r=await p.goto('http://127.0.0.1:4173/en/',{waitUntil:'load'});await p.waitForTimeout(1000);const txt=await p.locator('body').innerText();const em=await p.locator('a[href="mailto:contact@finintcorp.ltd"]').count();const op=await p.evaluate(()=>getComputedStyle(document.body).opacity);console.log(n,'status',r&&r.status(),'email',em,'opacity',op,'errors',er.length,er);if(!r||r.status()!==200||!txt.includes('Financial Intelligence Bureau')||em!==1||op==='0'||er.length)process.exitCode=1;await b.close()}})().catch(e=>{console.error(e);process.exit(1)});
+          JS
+          node smoke.cjs
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-74-cross-browser-contact
+          path: finint-cloudflare-v11-74-cross-browser-contact.zip
+          retention-days: 1
