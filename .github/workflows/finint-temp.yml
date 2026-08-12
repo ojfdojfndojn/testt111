@@ -1,69 +1,23 @@
-name: build finint v11.77 levels width fix
+name: publish finint v11.77 artifact
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply levels width override
-        shell: bash
+      - name: Verify package exists
         run: |
-          set -euo pipefail
-          rm -rf dist && mkdir dist
-          unzip -q finint-cloudflare-v11-76-css-sri-fix.zip -d dist
-          cat > /tmp/levels-fix.css <<'CSS'
-          /* v11.77 levels desktop proportions */
-          @media (min-width:1025px){
-            .levels-interface{grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr)!important;gap:18px!important;align-items:start!important}
-            .research-levels-nav{min-width:0!important;width:100%!important}
-            .research-levels-view{min-width:0!important;width:100%!important;max-width:none!important}
-            .level-nav-name{min-width:0!important;overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;white-space:normal!important}
-            .level-nav-price{white-space:nowrap!important;flex:0 0 auto!important}
-          }
-          CSS
-          count=0
-          while IFS= read -r -d '' css; do
-            cat /tmp/levels-fix.css >> "$css"
-            count=$((count+1))
-          done < <(find dist -type f -name '*.css' -print0)
-          test "$count" -gt 0
-          echo "patched css files: $count"
-      - name: Verify requested state
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -R -Fq 'grid-template-columns:clamp(360px,30vw,390px) minmax(0,1fr)!important' dist
-          grep -R -Fq 'overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important' dist
-          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
-            test -s "$f"
-            grep -q 'mailto:contact@finintcorp.ltd' "$f"
-            ! grep -q 'fib-loader-state' "$f"
-            ! grep -q 'fib-compat-fallback' "$f"
-          done
-          test -s dist/reports/public-report-ru.pdf
-          test -s dist/reports/public-report-en.pdf
-          test -s dist/reports/public-report-it.pdf
-          echo 'v11.77 verification passed.'
-      - name: Package full Cloudflare site
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f finint-cloudflare-v11-77-levels-width-fix.zip
-          (cd dist && zip -qr ../finint-cloudflare-v11-77-levels-width-fix.zip .)
+          test -s finint-cloudflare-v11-77-levels-width-fix.zip
           unzip -t finint-cloudflare-v11-77-levels-width-fix.zip >/dev/null
-          ls -lh finint-cloudflare-v11-77-levels-width-fix.zip
-      - name: Publish package
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'FININT build bot'
-          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
-          git add -f finint-cloudflare-v11-77-levels-width-fix.zip
-          git commit -m 'Build FININT v11.77 levels width fix' || true
-          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finint-cloudflare-v11-77-levels-width-fix
+          path: finint-cloudflare-v11-77-levels-width-fix.zip
+          if-no-files-found: error
+          retention-days: 7
