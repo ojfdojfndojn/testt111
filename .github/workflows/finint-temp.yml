@@ -1,27 +1,68 @@
-name: check finint css sri
+name: build finint v11.76 css sri fix
 on:
   push:
     paths:
       - '.github/workflows/finint-temp.yml'
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check stylesheet integrity
+      - name: Fix local stylesheet SRI only
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist && mkdir dist
           unzip -q finint-cloudflare-v11-75-no-obfuscation-contact.zip -d dist
+          node <<'NODE'
+          const fs=require('fs');
+          const pages=['dist/index.html','dist/ru/index.html','dist/en/index.html','dist/it/index.html'];
+          for(const file of pages){
+            let h=fs.readFileSync(file,'utf8');
+            h=h.replace(/(<link\b[^>]*href=["']\/assets\/r\/957bc080ce5bb8bec37b0b\.css["'][^>]*?)\s+integrity=["'][^"']+["']([^>]*>)/ig,'$1$2');
+            fs.writeFileSync(file,h);
+          }
+          NODE
+      - name: Verify exact requested state
+        shell: bash
+        run: |
+          set -euo pipefail
           css='dist/assets/r/957bc080ce5bb8bec37b0b.css'
-          echo -n 'actual sha384-'
-          openssl dgst -sha384 -binary "$css" | openssl base64 -A
-          echo
-          echo 'declared:'
-          grep -o 'integrity="sha384-[^"]*"' dist/ru/index.html | head -1
-          echo 'size:'
-          wc -c "$css"
-          echo 'first bytes:'
-          head -c 160 "$css"; echo
+          test -s "$css"
+          for f in dist/index.html dist/ru/index.html dist/en/index.html dist/it/index.html; do
+            test -s "$f"
+            grep -q 'href="/assets/r/957bc080ce5bb8bec37b0b.css"' "$f"
+            ! grep -Eq '<link[^>]+957bc080ce5bb8bec37b0b\.css[^>]+integrity=' "$f"
+            grep -q 'mailto:contact@finintcorp.ltd' "$f"
+            ! grep -q 'fib-loader-state' "$f"
+            ! grep -q 'f1n1nt-v1174-crossbrowser-safe-loader-2026' "$f"
+            ! grep -q 'fib-compat-fallback' "$f"
+            ! grep -q 'unable to initialize' "$f"
+            ! grep -q 'initialization timeout' "$f"
+          done
+          test -s dist/scripts/mobile-intro.js
+          test -s dist/scripts/language-router.js
+          test -s dist/reports/public-report-ru.pdf
+          test -s dist/reports/public-report-en.pdf
+          test -s dist/reports/public-report-it.pdf
+          echo 'v11.76 verification passed: stylesheet SRI removed, CSS present, email present, intro untouched, no obfuscation.'
+      - name: Package full Cloudflare site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f finint-cloudflare-v11-76-css-sri-fix.zip
+          (cd dist && zip -qr ../finint-cloudflare-v11-76-css-sri-fix.zip .)
+          unzip -t finint-cloudflare-v11-76-css-sri-fix.zip >/dev/null
+          ls -lh finint-cloudflare-v11-76-css-sri-fix.zip
+      - name: Publish package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'FININT build bot'
+          git config user.email '110449733+ojfdojfndojn@users.noreply.github.com'
+          git add -f finint-cloudflare-v11-76-css-sri-fix.zip
+          git commit -m 'Build FININT v11.76 css sri fix' || true
+          git push origin HEAD:main
