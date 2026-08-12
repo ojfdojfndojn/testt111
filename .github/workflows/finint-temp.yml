@@ -1,0 +1,39 @@
+name: finint temporary build
+on:
+  push:
+    paths:
+      - '.github/workflows/finint-temp.yml'
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch current public site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot
+          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/' -o snapshot/root.html
+          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/ru/' -o snapshot/ru.html
+          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/en/' -o snapshot/en.html
+          curl -fsSL --retry 3 --connect-timeout 20 -A 'Mozilla/5.0' 'https://finintcorp.ltd/it/' -o snapshot/it.html
+          echo '=== byte sizes ==='
+          wc -c snapshot/*.html
+          echo '=== first 2500 bytes root ==='
+          head -c 2500 snapshot/root.html
+          echo
+          echo '=== compatibility/content tokens per page ==='
+          for f in snapshot/*.html; do
+            echo "--- $f"
+            for t in 'DecompressionStream' 'TextEncoder' 'crypto.subtle' 'AES-GCM' 'IntersectionObserver' '?.' '??' 'contact@finintcorp.ltd' 'public-report-ru.pdf' 'data-report-slot' 'fib-intro-pending'; do
+              printf '%-28s ' "$t"
+              grep -Foc "$t" "$f" || true
+            done
+          done
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: finint-public-snapshot
+          path: snapshot
+          retention-days: 1
